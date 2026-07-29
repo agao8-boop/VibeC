@@ -132,6 +132,7 @@ main{display:flex;flex:1;overflow:hidden;}
   <div class="logo">VibeC</div>
   <nav class="filters" id="filters">
     <button class="filter on" data-f="all">All</button>
+    <button class="filter" data-f="App">App</button>
     <button class="filter" data-f="Visual">Visual</button>
     <button class="filter" data-f="Article">Article</button>
   </nav>
@@ -162,6 +163,28 @@ main{display:flex;flex:1;overflow:hidden;}
 const PROJECTS = [
   {
     id: 1,
+    name: 'ThermalIQ',
+    category: 'App',
+    year: '2025',
+    purpose: 'AI thermal comfort for smart buildings',
+    fn: 'Real-time HVAC control via personal AI agent',
+    desc: 'Purpose: Optimise thermal comfort and cut carbon emissions in commercial buildings.\nFunction: Personal AI agent learns your comfort preferences, auto-adjusts HVAC zones in real time, tracks carbon footprint per space.',
+    url: 'https://thermaliq.vercel.app',
+    thumb: null
+  },
+  {
+    id: 2,
+    name: 'MIM-Chat',
+    category: 'App',
+    year: '2025',
+    purpose: 'Maintenance Intelligence Module with Chat',
+    fn: 'AI chat interface for building maintenance ops',
+    desc: 'Purpose: Bring conversational AI to facility maintenance workflows.\nFunction: Chat-based interface powered by Gemini for maintenance queries, diagnostics and ops intelligence.',
+    url: 'https://github.com/agao8-boop/MIM-Chat',
+    thumb: null
+  },
+  {
+    id: 3,
     name: 'ResC',
     category: 'Visual',
     year: '2025',
@@ -169,10 +192,10 @@ const PROJECTS = [
     fn: 'Beat-synced resolution ladder 144p → 1080p',
     desc: 'Purpose: Turn any image or live photo into a beat-synced pixel resolution reveal.\nFunction: Upload image or video, choose BGM, step through 144p → 1080p resolution transitions on the beat.',
     url: 'Visual/1.ResC/index.html',
-    thumb: 'Visual/1.ResC/SampleLive.HEIC'
+    thumb: null
   },
   {
-    id: 2,
+    id: 4,
     name: 'PaperSnap',
     category: 'Article',
     year: '2025',
@@ -186,6 +209,7 @@ const PROJECTS = [
 
 const HERO = {
   all:     { label: 'Vibe Coded Lab', text: 'SMALL<br>TOOLS &amp;<br>EXPERIMENTS' },
+  App:     { label: 'Category — App', text: 'AI<br>PRODUCTS' },
   Visual:  { label: 'Category — Visual', text: 'VISUAL<br>EXPERI-<br>MENTS' },
   Article: { label: 'Category — Article', text: 'WRITTEN<br>WORKS' }
 };
@@ -211,6 +235,7 @@ function renderList() {
     const a = document.createElement('a');
     a.className = 'project';
     a.href = p.url;
+    if (p.url.startsWith('http')) { a.target = '_blank'; a.rel = 'noopener'; }
     a.innerHTML = `
       <span class="proj-num">${String(i+1).padStart(2,'0')}</span>
       <span>
