@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ResC — Resolution Reveal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+
+<!-- SVG filters for chromatic aberration (inline so ctx.filter url() works) -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <filter id="rf" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="gf" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="bf" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+    </filter>
+  </defs>
+</svg>
+
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow:hidden;background:#111;color:#fff;}
+body{font-family:'Inter',sans-serif;display:flex;flex-direction:column;}
+
+/* ── header ── */
+header{
+  display:flex;align-items:center;gap:12px;padding:10px 16px;
+  border-bottom:1px solid #1e1e1e;flex-shrink:0;height:46px;
+}
+.back{font-size:11px;color:#555;text-decoration:none;transition:color .2s;}
+.back:hover{color:#ddd;}
+.title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.06em;}
+.hdiv{width:1px;height:16px;background:#2a2a2a;flex-shrink:0;}
+
+/* upload chips */
+.chip{
+  display:flex;align-items:center;gap:6px;padding:5px 10px;
+  border:1px solid #2a2a2a;border-radius:3px;cursor:pointer;
+  font-size:11px;color:#666;transition:all .2s;white-space:nowrap;
+  overflow:hidden;max-width:160px;text-overflow:ellipsis;
+}
+.chip:hover{border-color:#484848;color:#bbb;}
+.chip.loaded{border-color:#3a3a3a;color:#999;}
+.chip-icon{font-size:10px;opacity:.5;flex-shrink:0;}
+.chip input[type=file]{display:none;}
+
+/* bpm chip */
+.bpm-chip{
+  display:flex;align-items:center;gap:4px;padding:5px 10px;
+  border:1px solid #2a2a2a;border-radius:3px;font-size:11px;color:#666;
+}
+.bpm-val{
+  font-family:'Bebas Neue',sans-serif;font-size:16px;color:#ddd;
+  letter-spacing:.04em;cursor:text;min-width:32px;
+}
+.bpm-val:focus{outline:none;color:#fff;}
+.bpm-unit{font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.08em;}
+
+/* beat info */
+.beat-tag{
+  font-size:10px;color:#3a8a5a;letter-spacing:.04em;opacity:0;
+  transition:opacity .4s;white-space:nowrap;
+}
+.beat-tag.show{opacity:1;}
+
+.spacer{flex:1;}
+
+/* ── canvas area ── */
+.canvas-area{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  background:#0a0a0a;overflow:hidden;position:relative;
+}
+.canvas-wrap{
+  position:relative;display:inline-block;
+  line-height:0; /* remove baseline gap */
+}
+canvas{
+  display:block;
+  max-height:calc(100vh - 46px);
+  max-width:100vw;
+}
+
+/* empty state */
+.empty{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;color:#2a2a2a;pointer-events:none;
+}
+.empty .big{
+  font-family:'Bebas Neue',sans-serif;font-size:80px;letter-spacing:.06em;
+}
+.empty .sub{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#222;}
+
+/* ── Win98 play button (DOM overlay, bottom-right) ── */
+.play-btn{
+  position:absolute;bottom:22px;right:22px;
+  padding:10px 28px;
+  font-family:'Courier New', monospace;font-size:15px;font-weight:bold;
+  color:#000;cursor:pointer;
+  background:#d4d0c8;
+  border-width:2px;border-style:solid;
+  border-color:#ffffff #808080 #808080 #ffffff;
+  outline:none;
+  letter-spacing:.06em;
+  min-width:110px;
+  z-index:20;
+  user-select:none;
+}
+.play-btn:active{
+  border-color:#808080 #ffffff #ffffff #808080;
+  padding:11px 27px 9px 29px;
+}
+.play-btn:disabled{opacity:.4;cursor:default;}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" href="../../index.html">← VibeC</a>
+  <div class="title">ResC</div>
+  <div class="hdiv"></div>
+
+  <!-- Media chip -->
+  <label class="chip" id="mediaChip">
+    <span class="chip-icon">▤</span>
+    <span id="mediaLabel">Drop video</span>
+    <input type="file" id="fileInput" accept="image/*,video/*,.heic,.mov">
+  </label>
+
+  <!-- BGM chip -->
+  <label class="chip" id="bgmChip">
+    <span class="chip-icon">♪</span>
+    <span id="bgmLabel">Drop BGM</span>
+    <input type="file" id="bgmInput" accept="audio/*">
+  </label>
+
+  <!-- BPM -->
+  <div class="bpm-chip">
+    <div class="bpm-val" id="bpmVal" contenteditable="true" spellcheck="false">120</div>
+    <div class="bpm-unit">BPM</div>
+  </div>
+
+  <!-- Beat detection result -->
+  <div class="beat-tag" id="beatTag"></div>
+
+  <div class="spacer"></div>
+  <div style="font-size:10px;color:#333;letter-spacing:.04em;">Resolution Reveal</div>
+</header>
+
+<div class="canvas-area" id="canvasArea">
+  <div class="empty" id="emptyState">
+    <div class="big">ResC</div>
+    <div class="sub">Drop an image or video to begin</div>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap" style="display:none">
+    <canvas id="canvas"></canvas>
+    <button class="play-btn" id="btnPlay" disabled>▶  Play</button>
+  </div>
+</div>
+
+<script>
+// ─── Constants ──────────────────────────────────────────────────────────────
+// Scales are intentionally far below "label ÷ 1080" so blocks are visible on screen.
+// At 0.018 a 1080-wide canvas → 19px wide → ~18px blocks when displayed at 350px.
+const STEPS = [
+  { label:'144p',  scale: 0.018 },
+  { label:'240p',  scale: 0.042 },
+  { label:'360p',  scale: 0.09  },
+  { label:'480p',  scale: 0.19  },
+  { label:'720p',  scale: 0.40  },
+  { label:'1080p', scale: 1     },
+];
+const BEATS_PER_STEP = 2; // steps are slow by default
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let mediaEl   = null, mediaType = null;
+let trimStart = 0, trimLen = Infinity;
+let bgmBuf    = null;
+let beatTimestamps = []; // ms from start
+let bpm = 120;
+
+let audioCtx   = null;
+let recordDest = null;
+let recorder   = null, recordChunks = [];
+
+let isPlaying  = false;
+let animFrame  = null;
+let stepIdx    = 0;
+let visualStep = 0;   // float, for smooth dialog scroll
+let highlightAge = 0; // frames since last step change
+
+// Effects
+let shakeX = 0, shakeY = 0, shakeAmt = 0, shakeDecay = 0.68;
+let flashAlpha = 0;
+let aberration = 0; // chromatic aberration strength (canvas pixels)
+
+// Win98 dialog drag state
+let dlgX = null, dlgY = null; // null = use default on first draw
+let dlgVisible = true;
+let dlgDragging = false, dragOffX = 0, dragOffY = 0;
+let dlgBounds = null; // { x,y,w,h, titleBottom, closeX,closeY,closeS }
+
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
+const cWrap    = document.getElementById('canvasWrap');
+
+// ─── BPM ─────────────────────────────────────────────────────────────────────
+const bpmEl = document.getElementById('bpmVal');
+bpmEl.addEventListener('input', () => {
+  const v = parseInt(bpmEl.textContent) || 120;
+  bpm = Math.max(40, Math.min(240, v));
+});
+bpmEl.addEventListener('blur', () => { bpmEl.textContent = bpm; });
+bpmEl.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();bpmEl.blur();} });
+
+// ─── Beat detection ───────────────────────────────────────────────────────────
+async function detectBeats(file) {
+  const ab   = await file.arrayBuffer();
+  const tmp  = new AudioContext();
+  const buf  = await tmp.decodeAudioData(ab);
+  await tmp.close();
+  bgmBuf = buf;
+
+  const sr = buf.sampleRate, len = buf.length;
+
+  // Mix to mono
+  let mono = buf.getChannelData(0);
+  if (buf.numberOfChannels > 1) {
+    const c1 = buf.getChannelData(1);
+    mono = new Float32Array(len);
+    for (let i = 0; i < len; i++) mono[i] = (buf.getChannelData(0)[i] + c1[i]) * 0.5;
+  }
+
+  // Low-pass via OfflineAudioContext (isolate kick at <180Hz)
+  const off = new OfflineAudioContext(1, len, sr);
+  const sb  = off.createBuffer(1, len, sr);
+  sb.getChannelData(0).set(mono);
+  const src = off.createBufferSource(); src.buffer = sb;
+  const lpf = off.createBiquadFilter();
+  lpf.type = 'lowpass'; lpf.frequency.value = 180; lpf.Q.value = 0.7;
+  src.connect(lpf); lpf.connect(off.destination); src.start(0);
+  const filt = await off.startRendering();
+  const d = filt.getChannelData(0);
+
+  // Short-time energy (hop=512)
+  const hop = 512, win = 1024;
+  const nF  = Math.floor((len - win) / hop);
+  const energy = new Float32Array(nF);
+  for (let i = 0; i < nF; i++) {
+    let e = 0; const s = i * hop;
+    for (let j = 0; j < win; j++) e += d[s+j] * d[s+j];
+    energy[i] = e / win;
+  }
+
+  // Onset = energy above local mean (~400ms)
+  const lW = Math.round(sr * 0.4 / hop);
+  const onset = new Float32Array(nF);
+  for (let i = lW; i < nF; i++) {
+    let m = 0;
+    for (let j = i-lW; j < i; j++) m += energy[j];
+    m /= lW;
+    onset[i] = Math.max(0, energy[i] - m);
+  }
+
+  // Normalize
+  let mx = 0; for (let i = 0; i < nF; i++) if (onset[i] > mx) mx = onset[i];
+  if (mx === 0) return [];
+  for (let i = 0; i < nF; i++) onset[i] /= mx;
+
+  // Peak pick
+  const minG = Math.ceil(280 * sr / (hop * 1000));
+  const beats = [];
+  for (let i = 1; i < nF - 1; i++) {
+    if (onset[i] > 0.18 && onset[i] >= onset[i-1] && onset[i] > onset[i+1]) {
+      const t = i * hop / sr * 1000;
+      if (!beats.length || t - beats[beats.length-1] >= 280) beats.push(t);
+    }
+  }
+
+  // BPM estimate
+  if (beats.length > 3) {
+    const ivs = [];
+    for (let i = 1; i < Math.min(beats.length, 24); i++) ivs.push(beats[i]-beats[i-1]);
+    ivs.sort((a,b)=>a-b);
+    let est = Math.round(60000 / ivs[Math.floor(ivs.length/2)]);
+    while (est > 180) est = Math.round(est/2);
+    while (est < 60)  est = Math.round(est*2);
+    bpm = est;
+    bpmEl.textContent = bpm;
+  }
+
+  const tag = document.getElementById('beatTag');
+  tag.textContent = `${beats.length} beats · ${bpm} BPM`;
+  tag.classList.add('show');
+  return beats;
+}
+
+// ─── BGM upload ───────────────────────────────────────────────────────────────
+document.getElementById('bgmInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  document.getElementById('bgmLabel').textContent = f.name;
+  document.getElementById('bgmChip').classList.add('loaded');
+  document.getElementById('beatTag').classList.remove('show');
+  beatTimestamps = await detectBeats(f);
+});
+
+// ─── Media upload ─────────────────────────────────────────────────────────────
+function handleFile(f) {
+  // Always reset dialog visibility and position for fresh media
+  dlgVisible = true;
+  dlgX = null; dlgY = null;
+  const url = URL.createObjectURL(f);
+  if (f.type.startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name)) {
+    loadVideo(url, f.name);
+  } else {
+    loadImage(url, f.name);
+  }
+}
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// Drag onto canvas area
+const area = document.getElementById('canvasArea');
+area.addEventListener('dragover', e => e.preventDefault());
+area.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+function loadImage(url, name) {
+  const img = new Image();
+  img.onload = () => {
+    mediaEl = img; mediaType = 'image';
+    trimLen = Infinity;
+    setupCanvas(img.naturalWidth, img.naturalHeight);
+    redrawStatic();
+    setMediaLabel(name);
+    enablePlay();
+  };
+  img.onerror = () => alert('Cannot load image. HEIC requires Safari — convert to JPG/PNG for Chrome.');
+  img.src = url;
+}
+
+function loadVideo(url, name) {
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'metadata'; v.src = url;
+  v.onloadedmetadata = () => {
+    mediaEl = v; mediaType = 'video';
+    trimStart = 0; trimLen = v.duration;
+    setupCanvas(v.videoWidth || 1080, v.videoHeight || 1920);
+    // Show dialog immediately over a dark canvas while first frame loads
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawWin98Dialog(STEPS, 0);
+    v.currentTime = 0;
+    v.onseeked = () => { redrawStatic(); v.onseeked = null; };
+    setMediaLabel(name);
+    enablePlay();
+  };
+  v.onerror = () => alert('Video load failed.');
+}
+
+function setMediaLabel(name) {
+  document.getElementById('mediaLabel').textContent = name.length > 18 ? name.slice(0,16)+'…' : name;
+  document.getElementById('mediaChip').classList.add('loaded');
+}
+
+function setupCanvas(w, h) {
+  canvas.width = w; canvas.height = h;
+  document.getElementById('emptyState').style.display = 'none';
+  cWrap.style.display = 'inline-block';
+}
+
+function enablePlay() {
+  document.getElementById('btnPlay').disabled = false;
+}
+
+// Redraws the static preview (full quality + dialog at step 0).
+// Called whenever dialog is dragged or closed while not playing.
+function redrawStatic() {
+  if (!mediaEl || isPlaying) return;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(mediaEl, 0, 0, canvas.width, canvas.height);
+  if (dlgVisible) drawWin98Dialog(STEPS, 0);
+}
+
+// ─── Win98 dialog drag & close (canvas mouse events) ─────────────────────────
+function toCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width  / r.width),
+    y: (e.clientY - r.top)  * (canvas.height / r.height)
+  };
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (!dlgVisible || !dlgBounds) return;
+  const p = toCanvas(e);
+  const b = dlgBounds;
+  // Hit close button?
+  if (p.x >= b.closeX && p.x <= b.closeX + b.closeS &&
+      p.y >= b.closeY && p.y <= b.closeY + b.closeS) {
+    dlgVisible = false;
+    canvas.style.cursor = 'default';
+    redrawStatic(); // remove dialog from static preview
+    return;
+  }
+  // Hit title bar?
+  if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.titleBottom) {
+    dlgDragging = true;
+    dragOffX = p.x - b.x;
+    dragOffY = p.y - b.y;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (dlgDragging) {
+    const p = toCanvas(e);
+    dlgX = Math.max(0, Math.min(canvas.width  - dlgBounds.w, p.x - dragOffX));
+    dlgY = Math.max(0, Math.min(canvas.height - dlgBounds.h, p.y - dragOffY));
+    redrawStatic(); // live-update position while dragging in preview
+    return;
+  }
+  if (!dlgVisible || !dlgBounds || !isPlaying) { canvas.style.cursor = 'default'; return; }
+  const p = toCanvas(e), b = dlgBounds;
+  const inTitle = p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.titleBottom;
+  canvas.style.cursor = inTitle ? 'grab' : 'default';
+});
+
+canvas.addEventListener('mouseup',    () => { dlgDragging = false; canvas.style.cursor = 'default'; });
+canvas.addEventListener('mouseleave', () => { dlgDragging = false; });
+
+// ─── Canvas drawing ───────────────────────────────────────────────────────────
+// Temp canvas pool for pixelation (reuse)
+let _tmpCanvas = null;
+function getPixelated(scale) {
+  const W = canvas.width, H = canvas.height;
+  if (scale >= 1) return null; // draw full quality directly
+  const sw = Math.max(2, Math.round(W * scale));
+  const sh = Math.max(2, Math.round(H * scale));
+  if (!_tmpCanvas) _tmpCanvas = document.createElement('canvas');
+  _tmpCanvas.width = sw; _tmpCanvas.height = sh;
+  const tc = _tmpCanvas.getContext('2d');
+  tc.imageSmoothingEnabled = false;
+  tc.drawImage(mediaEl, 0, 0, sw, sh);
+  return _tmpCanvas;
+}
+
+function drawMedia(scale, aberr) {
+  const W = canvas.width, H = canvas.height;
+  const tmp = getPixelated(scale);
+
+  if (aberr < 1.5) {
+    if (tmp) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tmp, 0, 0, W, H);
+    } else {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(mediaEl, 0, 0, W, H);
+    }
+    return;
+  }
+
+  // Chromatic aberration: split R G B channels with offsets
+  const a = Math.round(aberr);
+  const src = tmp || mediaEl;
+  const isSm = !tmp;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = !isSm && false;
+
+  ctx.filter = 'url("#rf")';
+  ctx.drawImage(src, a, 0, W, H);
+
+  ctx.filter = 'url("#gf")';
+  ctx.drawImage(src, 0, 0, W, H);
+
+  ctx.filter = 'url("#bf")';
+  ctx.drawImage(src, -a, 0, W, H);
+
+  ctx.filter = 'none';
+  ctx.restore();
+}
+
+// ─── Win98 dropdown dialog (drawn on canvas) ─────────────────────────────────
+function drawWin98Dialog(steps, curIdx) {
+  if (!dlgVisible) return;
+  const W = canvas.width, H = canvas.height;
+
+  // Size: dialog is ~42% of canvas width
+  const dlgW  = Math.round(W * 0.42);
+  const sc    = dlgW / 140; // derive proportional scale
+  const titleH = Math.round(22 * sc);
+  const rowH   = Math.round(20 * sc);
+  const sbW    = Math.round(18 * sc);
+  const padL   = Math.round(6 * sc);
+  const fs     = Math.max(14, Math.round(12 * sc));
+  const listH  = rowH * steps.length;
+  const dlgH   = titleH + listH + 4;
+
+  // Default position: center-top area; user can drag to anywhere
+  if (dlgX === null) {
+    dlgX = Math.round((W - dlgW) / 2);
+    dlgY = Math.round(H * 0.18);
+  }
+
+  // Store bounds for drag/close hit testing
+  { const tbX_ = dlgX+3, tbY_ = dlgY+3, tbW_ = dlgW-6, tbH_ = titleH-2;
+    dlgBounds = {
+      x: dlgX, y: dlgY, w: dlgW, h: dlgH,
+      titleBottom: dlgY + titleH,
+      closeX: tbX_ + tbW_ - (tbH_-4) - 2,
+      closeY: tbY_ + 2,
+      closeS: tbH_ - 4
+    };
+  }
+
+  // ── Win98 raised window border ──
+  const outer = (x,y,w,h) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y, 2, h);
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(x+w-2, y, 2, h); ctx.fillRect(x, y+h-2, w, 2);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x+2, y+2, w-4, h-4);
+    ctx.fillStyle = '#dfdfdf';
+    ctx.fillRect(x+2, y+2, w-4, 1); ctx.fillRect(x+2, y+2, 1, h-4);
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(x+w-3, y+2, 1, h-4); ctx.fillRect(x+2, y+h-3, w-4, 1);
+  };
+  outer(dlgX, dlgY, dlgW, dlgH);
+
+  // ── Title bar ──
+  const tbX = dlgX + 3, tbY = dlgY + 3, tbW = dlgW - 6, tbH = titleH - 2;
+  const grad = ctx.createLinearGradient(tbX, 0, tbX + tbW, 0);
+  grad.addColorStop(0, '#000080');
+  grad.addColorStop(1, '#1084d0');
+  ctx.fillStyle = grad;
+  ctx.fillRect(tbX, tbY, tbW, tbH);
+
+  // Title text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${Math.round(fs * 0.88)}px "Courier New", monospace`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('Select Quality', tbX + 4, tbY + tbH / 2);
+
+  // Close button (X)
+  const btnS = tbH - 4;
+  const btnX = tbX + tbW - btnS - 2, btnY = tbY + 2;
+  ctx.fillStyle = '#c0c0c0';
+  ctx.fillRect(btnX, btnY, btnS, btnS);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(btnX, btnY, btnS, 1); ctx.fillRect(btnX, btnY, 1, btnS);
+  ctx.fillStyle = '#808080'; ctx.fillRect(btnX+btnS-1, btnY, 1, btnS); ctx.fillRect(btnX, btnY+btnS-1, btnS, 1);
+  ctx.fillStyle = '#000'; ctx.font = `bold ${Math.round(fs * 0.85)}px "Courier New"`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('✕', btnX + btnS/2, btnY + btnS/2);
+
+  // ── Listbox (sunken) ──
+  const lbX = dlgX + 3, lbY = dlgY + titleH + 1, lbW = dlgW - 6, lbH = listH + 2;
+  // Sunken border
+  ctx.fillStyle = '#808080'; ctx.fillRect(lbX, lbY, lbW, 1); ctx.fillRect(lbX, lbY, 1, lbH);
+  ctx.fillStyle = '#404040'; ctx.fillRect(lbX+1, lbY+1, lbW-2, 1); ctx.fillRect(lbX+1, lbY+1, 1, lbH-2);
+  ctx.fillStyle = '#dfdfdf'; ctx.fillRect(lbX+lbW-1, lbY, 1, lbH); ctx.fillRect(lbX, lbY+lbH-1, lbW, 1);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(lbX+lbW-2, lbY+1, 1, lbH-2); ctx.fillRect(lbX+1, lbY+lbH-2, lbW-2, 1);
+  // Content bg
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(lbX+2, lbY+2, lbW - sbW - 2, lbH - 4);
+
+  // Rows
+  ctx.font = `${fs}px "Courier New", monospace`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const contentW = lbW - sbW - 4;
+
+  steps.forEach((s, i) => {
+    const ry = lbY + 2 + i * rowH;
+    const isCur = i === curIdx;
+    const flashBoost = isCur ? Math.max(0, 1 - highlightAge * 0.04) : 0;
+
+    if (isCur) {
+      ctx.fillStyle = '#000080';
+      ctx.fillRect(lbX + 2, ry, contentW, rowH);
+    } else if (flashBoost > 0) {
+      ctx.fillStyle = `rgba(0,0,128,${flashBoost * 0.6})`;
+      ctx.fillRect(lbX + 2, ry, contentW, rowH);
+    }
+
+    ctx.fillStyle = isCur ? '#ffffff' : '#000000';
+    ctx.fillText(s.label, lbX + 2 + padL, ry + rowH / 2);
+  });
+
+  // ── Scrollbar ──
+  const sbX = lbX + lbW - sbW - 2;
+  const sbY = lbY + 2, sbH = lbH - 4;
+  ctx.fillStyle = '#c0c0c0'; ctx.fillRect(sbX, sbY, sbW, sbH);
+  ctx.fillStyle = '#808080'; ctx.fillRect(sbX, sbY, 1, sbH);
+
+  // Up arrow button
+  drawWinBtn(sbX, sbY, sbW, sbW);
+  ctx.fillStyle = '#000'; ctx.font = `${Math.round(sbW * 0.45)}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('▲', sbX + sbW/2, sbY + sbW/2);
+
+  // Down arrow button
+  const dbY = sbY + sbH - sbW;
+  drawWinBtn(sbX, dbY, sbW, sbW);
+  ctx.fillStyle = '#000'; ctx.fillText('▼', sbX + sbW/2, dbY + sbW/2);
+
+  // Thumb
+  const trackH = sbH - sbW * 2;
+  const tH = Math.max(sbW, Math.round(trackH / steps.length));
+  const tY = sbY + sbW + Math.round((trackH - tH) * (curIdx / Math.max(1, steps.length - 1)));
+  ctx.fillStyle = '#c0c0c0'; ctx.fillRect(sbX, tY, sbW, tH);
+  ctx.fillStyle = '#fff'; ctx.fillRect(sbX, tY, sbW, 1); ctx.fillRect(sbX, tY, 1, tH);
+  ctx.fillStyle = '#808080'; ctx.fillRect(sbX+sbW-1, tY, 1, tH); ctx.fillRect(sbX, tY+tH-1, sbW, 1);
+  ctx.fillStyle = '#404040'; ctx.fillRect(sbX+sbW-2, tY+1, 1, tH-2); ctx.fillRect(sbX+1, tY+tH-2, sbW-2, 1);
+}
+
+function drawWinBtn(x, y, w, h) {
+  ctx.fillStyle = '#c0c0c0'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
+  ctx.fillStyle = '#404040'; ctx.fillRect(x+w-1, y, 1, h); ctx.fillRect(x, y+h-1, w, 1);
+  ctx.fillStyle = '#808080'; ctx.fillRect(x+w-2, y+1, 1, h-2); ctx.fillRect(x+1, y+h-2, w-2, 1);
+}
+
+// ─── Effects ──────────────────────────────────────────────────────────────────
+function triggerShake(big) {
+  if (big) {
+    shakeAmt   = 42;
+    shakeDecay = 0.7;
+    flashAlpha = 0.95;
+    aberration = canvas.width * 0.045; // ~5% of width
+  } else {
+    shakeAmt   = Math.max(shakeAmt, 16);
+    shakeDecay = 0.62;
+  }
+}
+
+function tickEffects() {
+  if (shakeAmt > 0.4) {
+    shakeX = (Math.random() * 2 - 1) * shakeAmt;
+    shakeY = (Math.random() * 2 - 1) * shakeAmt;
+    shakeAmt *= shakeDecay;
+  } else { shakeX = 0; shakeY = 0; shakeAmt = 0; }
+  if (flashAlpha  > 0.01) flashAlpha  *= 0.78; else flashAlpha  = 0;
+  if (aberration  > 0.5)  aberration  *= 0.76; else aberration  = 0;
+}
+
+// ─── Audio ────────────────────────────────────────────────────────────────────
+function stopAudio() {
+  if (audioCtx) { try{audioCtx.close();}catch(e){} audioCtx = null; }
+}
+
+async function startAudio(forRecord) {
+  stopAudio();
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const gain = audioCtx.createGain(); gain.gain.value = 0.85;
+  if (forRecord) {
+    recordDest = audioCtx.createMediaStreamDestination();
+    gain.connect(recordDest);
+  }
+  gain.connect(audioCtx.destination);
+
+  if (bgmBuf) {
+    const nb = audioCtx.createBuffer(bgmBuf.numberOfChannels, bgmBuf.length, bgmBuf.sampleRate);
+    for (let c = 0; c < bgmBuf.numberOfChannels; c++) nb.getChannelData(c).set(bgmBuf.getChannelData(c));
+    const s = audioCtx.createBufferSource(); s.buffer = nb;
+    s.connect(gain); s.start(audioCtx.currentTime);
+  } else {
+    // Synthesized beat
+    const beatSec  = 60 / bpm;
+    const totalB   = STEPS.length * BEATS_PER_STEP + 4;
+    for (let i = 0; i < totalB; i++) {
+      const t = audioCtx.currentTime + i * beatSec;
+      makeKick(t); if (i % 2 === 1) makeSnare(t);
+    }
+  }
+  return audioCtx.currentTime;
+}
+
+function makeKick(t) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.frequency.setValueAtTime(140, t);
+  o.frequency.exponentialRampToValueAtTime(0.001, t+0.45);
+  g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t+0.45);
+  o.start(t); o.stop(t+0.5);
+}
+function makeSnare(t) {
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.12, audioCtx.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+  const s = audioCtx.createBufferSource(), g = audioCtx.createGain();
+  s.buffer = buf; s.connect(g); g.connect(audioCtx.destination);
+  g.gain.setValueAtTime(0.3, t); g.gain.exponentialRampToValueAtTime(0.001, t+0.12);
+  s.start(t); s.stop(t+0.15);
+}
+
+// ─── Transition timing ────────────────────────────────────────────────────────
+function buildTransitionTimes() {
+  const times = [];
+  const active = STEPS.length - 1; // transitions before the last step
+  if (beatTimestamps.length > 1) {
+    for (let i = 0; i < active; i++) {
+      const bi = Math.round(i * BEATS_PER_STEP);
+      if (bi < beatTimestamps.length) {
+        times.push(beatTimestamps[bi]);
+      } else {
+        const iv = (beatTimestamps[beatTimestamps.length-1] - beatTimestamps[beatTimestamps.length-2]) || 60000/bpm;
+        times.push(beatTimestamps[beatTimestamps.length-1] + (bi - beatTimestamps.length + 1) * iv);
+      }
+    }
+  } else {
+    const beatMs = 60000 / bpm;
+    for (let i = 0; i < active; i++) times.push(i * BEATS_PER_STEP * beatMs);
+  }
+  return times;
+}
+
+// ─── Main animation loop ──────────────────────────────────────────────────────
+async function startReveal(forRecord) {
+  stopAnim(); stopAudio();
+  isPlaying = true;
+  stepIdx = 0; visualStep = 0; highlightAge = 0;
+  shakeAmt = 0; flashAlpha = 0; aberration = 0;
+  dlgVisible = true; // re-show dialog each play (user can close/move it mid-play)
+
+  // Seek video to start
+  if (mediaType === 'video') {
+    mediaEl.currentTime = trimStart;
+    await new Promise(r => { mediaEl.onseeked = () => { mediaEl.onseeked = null; r(); }; });
+  }
+
+  const transTimes = buildTransitionTimes();
+  const audioStart = await startAudio(forRecord);
+  if (forRecord) startRecording();
+
+  let videoPlaying = false, done = false;
+
+  function frame() {
+    const elapsed = audioCtx ? (audioCtx.currentTime - audioStart) * 1000 : 0;
+
+    // Advance step?
+    if (stepIdx < transTimes.length && elapsed >= transTimes[stepIdx]) {
+      stepIdx++;
+      highlightAge = 0;
+      triggerShake(stepIdx === STEPS.length - 1);
+    }
+
+    const step    = STEPS[stepIdx];
+    const isFinal = stepIdx === STEPS.length - 1;
+
+    tickEffects();
+    visualStep += (stepIdx - visualStep) * 0.14;
+    highlightAge++;
+
+    // Draw with shake offset
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    if (isFinal && mediaType === 'video') {
+      if (!videoPlaying) {
+        videoPlaying = true;
+        mediaEl.currentTime = trimStart;
+        mediaEl.play().catch(()=>{});
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(mediaEl, 0, 0, canvas.width, canvas.height);
+    } else {
+      drawMedia(step.scale, aberration);
+    }
+
+    // Win98 dialog overlay
+    drawWin98Dialog(STEPS, stepIdx);
+    ctx.restore();
+
+    // Flash (no shake)
+    if (flashAlpha > 0.01) {
+      ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // End check
+    if (isFinal && !done) {
+      const videoOver = mediaType === 'video' && (mediaEl.currentTime - trimStart >= trimLen - 0.1 || mediaEl.ended);
+      const imageOver = mediaType === 'image' && elapsed >= (transTimes[transTimes.length-1] || 0) + 60000/bpm * 1.5;
+      if (videoOver || imageOver) {
+        done = true;
+        if (mediaType === 'video') mediaEl.pause();
+        if (forRecord) finishRecording();
+        document.getElementById('btnPlay').textContent = '▶  Play';
+        isPlaying = false;
+        return;
+      }
+    }
+
+    animFrame = requestAnimationFrame(frame);
+  }
+
+  animFrame = requestAnimationFrame(frame);
+}
+
+function stopAnim() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  isPlaying = false;
+  if (mediaEl && mediaType === 'video') { mediaEl.pause(); mediaEl.currentTime = trimStart; }
+}
+
+// ─── Recording ────────────────────────────────────────────────────────────────
+function startRecording() {
+  recordChunks = [];
+  const vs = canvas.captureStream(30);
+  let tr = [...vs.getTracks()];
+  if (recordDest) tr = [...tr, ...recordDest.stream.getTracks()];
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+  recorder = new MediaRecorder(new MediaStream(tr), { mimeType: mime });
+  recorder.ondataavailable = e => { if (e.data.size > 0) recordChunks.push(e.data); };
+  recorder.start(100);
+}
+function finishRecording() {
+  if (!recorder || recorder.state === 'inactive') return;
+  recorder.stop();
+  recorder.onstop = () => {
+    const blob = new Blob(recordChunks, { type:'video/webm' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'resc-reveal.webm'; a.click();
+    URL.revokeObjectURL(url);
+    recorder = null;
+    document.getElementById('btnPlay').disabled = false;
+  };
+}
+
+// ─── Play button ──────────────────────────────────────────────────────────────
+document.getElementById('btnPlay').addEventListener('click', async () => {
+  if (isPlaying) {
+    stopAnim(); stopAudio();
+    document.getElementById('btnPlay').textContent = '▶  Play';
+    return;
+  }
+  document.getElementById('btnPlay').textContent = '■  Stop';
+  await startReveal(false);
+});
+
+</script>
+</body>
+</html>

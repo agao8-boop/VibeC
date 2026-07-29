@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow:hidden;}
+body{
+  font-family:'Inter',sans-serif;
+  background:#fff;
+  color:#000;
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── header ── */
+header{
+  display:flex;
+  align-items:center;
+  padding:14px 24px;
+  border-bottom:1px solid #000;
+  flex-shrink:0;
+  gap:24px;
+}
+.logo{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;flex:1;}
+.filters{display:flex;gap:20px;}
+.filter{
+  font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+  background:none;border:none;cursor:pointer;color:#aaa;
+  padding:2px 0;border-bottom:1px solid transparent;transition:all .2s;
+}
+.filter.on,.filter:hover{color:#000;border-bottom-color:#000;}
+.clock{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;letter-spacing:.04em;}
+
+/* ── layout ── */
+main{display:flex;flex:1;overflow:hidden;}
+
+/* ── left: list ── */
+.list-col{
+  width:42%;
+  border-right:1px solid #000;
+  overflow-y:auto;
+  flex-shrink:0;
+  scrollbar-width:thin;
+  scrollbar-color:#ccc transparent;
+}
+.list-head{
+  display:grid;
+  grid-template-columns:52px 1fr 72px;
+  padding:8px 24px;
+  border-bottom:1px solid #000;
+  font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#aaa;
+  position:sticky;top:0;background:#fff;z-index:1;
+}
+.project{
+  display:grid;
+  grid-template-columns:52px 1fr 72px;
+  padding:13px 24px;
+  border-bottom:1px solid #ebebeb;
+  cursor:pointer;
+  text-decoration:none;
+  color:inherit;
+  align-items:start;
+  transition:background .12s;
+}
+.project:hover{background:#f7f7f7;}
+.project.dim{opacity:.3;}
+.proj-num{font-size:11px;color:#bbb;font-variant-numeric:tabular-nums;padding-top:1px;}
+.proj-name{font-size:13px;font-weight:500;line-height:1.2;}
+.proj-sub{font-size:10px;color:#aaa;font-weight:400;margin-top:3px;line-height:1.4;}
+.proj-cat{font-size:10px;color:#aaa;text-align:right;letter-spacing:.04em;padding-top:2px;}
+
+/* ── right: display ── */
+.right-col{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  padding:32px 40px 32px 40px;
+  position:relative;
+  overflow:hidden;
+}
+
+.hero-label{
+  font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;
+  color:#aaa;margin-bottom:10px;transition:opacity .3s;
+}
+.hero-text{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:clamp(72px,10vw,160px);
+  line-height:.92;
+  letter-spacing:-.01em;
+  text-transform:uppercase;
+  transition:opacity .25s;
+}
+
+.preview-box{
+  position:absolute;
+  top:32px;right:40px;
+  width:200px;height:150px;
+  background:#111;
+  overflow:hidden;
+  opacity:0;
+  transition:opacity .2s;
+  pointer-events:none;
+}
+.preview-box.show{opacity:1;}
+.preview-box img{width:100%;height:100%;object-fit:cover;}
+.preview-placeholder{
+  width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:#555;letter-spacing:.08em;text-transform:uppercase;
+}
+
+.count{
+  position:absolute;bottom:32px;right:40px;
+  font-size:10px;color:#bbb;letter-spacing:.06em;text-transform:uppercase;
+}
+.hero-desc{
+  font-size:12px;color:#555;margin-top:20px;max-width:340px;line-height:1.6;
+  opacity:0;transition:opacity .25s;
+}
+.hero-desc.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">VibeC</div>
+  <nav class="filters" id="filters">
+    <button class="filter on" data-f="all">All</button>
+    <button class="filter" data-f="Visual">Visual</button>
+    <button class="filter" data-f="Article">Article</button>
+  </nav>
+  <div class="clock" id="clock"></div>
+</header>
+
+<main>
+  <div class="list-col">
+    <div class="list-head">
+      <span>No.</span><span>Project</span><span style="text-align:right">Cat.</span>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <div class="right-col">
+    <div class="preview-box" id="previewBox">
+      <div class="preview-placeholder" id="previewPlaceholder">Preview</div>
+    </div>
+
+    <div class="hero-label" id="heroLabel">Vibe Coded Lab</div>
+    <div class="hero-text" id="heroText">SMALL<br>TOOLS &amp;<br>EXPERIMENTS</div>
+    <div class="hero-desc" id="heroDesc"></div>
+    <div class="count" id="count"></div>
+  </div>
+</main>
+
+<script>
+const PROJECTS = [
+  {
+    id: 1,
+    name: 'ResC',
+    category: 'Visual',
+    year: '2025',
+    purpose: 'Pixel-reveal for fashion / outfit content',
+    fn: 'Beat-synced resolution ladder 144p → 1080p',
+    desc: 'Purpose: Turn any image or live photo into a beat-synced pixel resolution reveal.\nFunction: Upload image or video, choose BGM, step through 144p → 1080p resolution transitions on the beat.',
+    url: 'Visual/1.ResC/index.html',
+    thumb: 'Visual/1.ResC/SampleLive.HEIC'
+  },
+  {
+    id: 2,
+    name: 'PaperSnap',
+    category: 'Article',
+    year: '2025',
+    purpose: 'Read white papers visually on your phone',
+    fn: 'Search or paste PDF → visual page cards + auto glossary',
+    desc: 'Purpose: Extract key visuals from reports and white papers for quick mobile reading.\nFunction: Type a report name or paste a PDF URL — PaperSnap renders each page as an image with brief captions. Auto-extracts terminology into a searchable glossary.',
+    url: 'Article/1.PaperSnap/index.html',
+    thumb: null
+  }
+];
+
+const HERO = {
+  all:     { label: 'Vibe Coded Lab', text: 'SMALL<br>TOOLS &amp;<br>EXPERIMENTS' },
+  Visual:  { label: 'Category — Visual', text: 'VISUAL<br>EXPERI-<br>MENTS' },
+  Article: { label: 'Category — Article', text: 'WRITTEN<br>WORKS' }
+};
+
+let activeFilter = 'all';
+const listEl   = document.getElementById('list');
+const heroText = document.getElementById('heroText');
+const heroLabel= document.getElementById('heroLabel');
+const heroDesc = document.getElementById('heroDesc');
+const previewBox = document.getElementById('previewBox');
+const previewPH  = document.getElementById('previewPlaceholder');
+const countEl  = document.getElementById('count');
+
+function renderList() {
+  listEl.innerHTML = '';
+  const visible = activeFilter === 'all'
+    ? PROJECTS
+    : PROJECTS.filter(p => p.category === activeFilter);
+
+  countEl.textContent = `${visible.length} Project${visible.length !== 1 ? 's' : ''}`;
+
+  visible.forEach((p, i) => {
+    const a = document.createElement('a');
+    a.className = 'project';
+    a.href = p.url;
+    a.innerHTML = `
+      <span class="proj-num">${String(i+1).padStart(2,'0')}</span>
+      <span>
+        <div class="proj-name">${p.name} <span style="font-size:10px;color:#aaa;font-weight:400">/ ${p.year}</span></div>
+        <div class="proj-sub">${p.fn}</div>
+      </span>
+      <span class="proj-cat">${p.category}</span>
+    `;
+    a.addEventListener('mouseenter', () => showProject(p));
+    a.addEventListener('mouseleave', resetHero);
+    listEl.appendChild(a);
+  });
+}
+
+function showProject(p) {
+  heroLabel.textContent = p.purpose;
+  heroText.textContent  = p.name;
+  heroDesc.textContent  = p.desc;
+  heroDesc.classList.add('show');
+
+  previewBox.querySelectorAll('img').forEach(e=>e.remove());
+  previewPH.style.display = 'flex';
+  const img = document.createElement('img');
+  img.src = p.thumb;
+  img.onload = () => { previewPH.style.display='none'; previewBox.appendChild(img); };
+  previewBox.classList.add('show');
+}
+
+function resetHero() {
+  const h = HERO[activeFilter] || HERO.all;
+  heroLabel.textContent = h.label;
+  heroText.innerHTML    = h.text;
+  heroDesc.classList.remove('show');
+  previewBox.classList.remove('show');
+}
+
+document.getElementById('filters').addEventListener('click', e => {
+  const btn = e.target.closest('.filter');
+  if (!btn) return;
+  document.querySelectorAll('.filter').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  activeFilter = btn.dataset.f;
+  resetHero();
+  renderList();
+});
+
+function tick() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+}
+tick(); setInterval(tick,1000);
+
+resetHero();
+renderList();
+</script>
+</body>
+</html>
