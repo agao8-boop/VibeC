@@ -416,24 +416,30 @@ const SEARX_INSTANCES = [
 async function searchPDFs(query) {
   const q = encodeURIComponent(query + ' filetype:pdf');
 
-  // Try each SearXNG instance via each proxy
-  for (const base of SEARX_INSTANCES) {
+  // Fire all proxy×instance combos in parallel, 3s deadline total
+  const attempts = SEARX_INSTANCES.flatMap(base => {
     const searchUrl = `${base}/search?q=${q}&format=json`;
-    for (const makeProxy of PROXIES) {
-      try {
-        const res = await fetch(makeProxy(searchUrl), { signal: AbortSignal.timeout(7000) });
-        if (!res.ok) continue;
-        const text = await res.text();
-        const data = JSON.parse(text);
-        const pdfs = (data.results || [])
-          .filter(r => r.url?.toLowerCase().includes('.pdf'))
-          .slice(0, 6)
-          .map(r => ({ title: r.title || r.url, url: r.url }));
-        if (pdfs.length > 0) return { results: pdfs, ok: true };
-      } catch(e) { /* try next combo */ }
-    }
+    return PROXIES.map(makeProxy =>
+      fetch(makeProxy(searchUrl), { signal: AbortSignal.timeout(3000) })
+        .then(r => r.ok ? r.text() : Promise.reject())
+        .then(text => {
+          const data = JSON.parse(text);
+          const pdfs = (data.results || [])
+            .filter(r => r.url?.toLowerCase().includes('.pdf'))
+            .slice(0, 6)
+            .map(r => ({ title: r.title || r.url, url: r.url }));
+          if (!pdfs.length) return Promise.reject();
+          return pdfs;
+        })
+    );
+  });
+
+  try {
+    const pdfs = await Promise.any(attempts);
+    return { results: pdfs, ok: true };
+  } catch {
+    return { results: [], ok: false };
   }
-  return { results: [], ok: false };
 }
 
 document.getElementById('btnSearch').addEventListener('click', doSearch);
@@ -499,6 +505,45 @@ function showToast(msg) {
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.style.opacity = '0'; }, 5000);
 }
+
+// ─── Clipboard paste (Cmd+V) — paste a screenshot, then search ───────────
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (!file) return;
+      // Show pasted image as thumbnail preview, focus search
+      const url = URL.createObjectURL(file);
+      let prev = document.getElementById('pastePreview');
+      if (!prev) {
+        prev = document.createElement('div');
+        prev.id = 'pastePreview';
+        prev.style.cssText = 'margin:12px 0;border-radius:8px;overflow:hidden;border:1px solid var(--border);max-height:160px;display:flex;align-items:center;justify-content:center;background:var(--surface);';
+        const img = document.createElement('img');
+        img.style.cssText = 'max-width:100%;max-height:160px;object-fit:contain;display:block;';
+        prev.appendChild(img);
+        document.getElementById('searchInput').parentElement.insertAdjacentElement('afterend', prev);
+      }
+      prev.querySelector('img').src = url;
+      prev.style.display = 'flex';
+      document.getElementById('searchInput').focus();
+      showToast('Screenshot pasted — type the report name and hit Find.');
+      return;
+    }
+    // Plain text paste → fill search input
+    if (item.kind === 'string' && item.type === 'text/plain') {
+      item.getAsString(s => {
+        const si = document.getElementById('searchInput');
+        si.value = s.trim().slice(0, 120);
+        si.focus();
+      });
+      return;
+    }
+  }
+});
 
 // ─── File upload (primary method — no CORS) ───────────────────────────────
 document.getElementById('fileInput').addEventListener('change', e => {
