@@ -4,3 +4,5 @@
 *.MOV
 *.mp4
 *.webm
+node_modules/
+**/node_modules/
